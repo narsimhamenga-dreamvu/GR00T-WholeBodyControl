@@ -228,6 +228,7 @@ def main(override_config: omegaconf.OmegaConf):
         ) or env_config.config.get("enable_cameras", False)
 
         args_cli.headless = config.headless
+        args_cli.livestream = getattr(config, "livestream", 0)
         args_cli.multi_gpu = config.multi_gpu
         args_cli.distributed = config.multi_gpu
         args_cli.device = device
