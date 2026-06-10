@@ -236,13 +236,15 @@ def main(override_config: omegaconf.OmegaConf):
         base_kit_args = (
             "--/log/level=error --/log/fileLogLevel=error --/log/outputStreamLevel=error"
         )
+        # RTX renderer crashes on servers without a physical display; fall back to Storm.
+        use_storm = getattr(args_cli, "enable_cameras", False) or getattr(args_cli, "livestream", 0) > 0
+        renderer_override = " --/renderer/active=Storm --/persistent/renderer/active=Storm" if use_storm else ""
         if args_cli.headless:
-            args_cli.kit_args = base_kit_args + " --no-window"
+            args_cli.kit_args = base_kit_args + " --no-window" + renderer_override
         elif getattr(args_cli, "livestream", 0) > 0:
-            # Livestream on a headless server: render but no physical window
-            args_cli.kit_args = base_kit_args + f" --no-window --/renderer/activeGpu={render_gpu_idx}"
+            args_cli.kit_args = base_kit_args + f" --no-window --/renderer/activeGpu={render_gpu_idx}" + renderer_override
         else:
-            args_cli.kit_args = base_kit_args + f" --/renderer/activeGpu={render_gpu_idx}"
+            args_cli.kit_args = base_kit_args + f" --/renderer/activeGpu={render_gpu_idx}" + renderer_override
 
         _lock_path = "/tmp/isaaclab_app_launcher.lock"  # noqa: S108
         with filelock.FileLock(_lock_path):
