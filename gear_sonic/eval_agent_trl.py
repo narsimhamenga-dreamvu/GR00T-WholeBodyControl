@@ -612,6 +612,13 @@ def main(override_config: omegaconf.OmegaConf):
         run_once = config.get("run_once", False)
         envs_completed = torch.zeros(config.num_envs, dtype=torch.bool, device=device)
 
+        # Optional: log robot states for MuJoCo replay
+        log_robot_states_path = config.get("log_robot_states", None)
+        _logged_root_pos, _logged_root_quat, _logged_joint_pos = [], [], []
+        if log_robot_states_path:
+            from gear_sonic.envs.manager_env.robots.g1 import G1_ISAACLAB_TO_MUJOCO_DOF
+            logger.info(f"[log_robot_states] Logging env-0 robot state -> {log_robot_states_path}")
+
         with torch.no_grad():
             while True:
                 policy_model = model.policy
@@ -637,7 +644,14 @@ def main(override_config: omegaconf.OmegaConf):
                     results[1],
                     results[2],
                     results[3],
-                )  # noqa: F841
+                )
+
+                if log_robot_states_path:
+                    robot = env.env.scene["robot"]
+                    _logged_root_pos.append(robot.data.root_pos_w[0].cpu().numpy())
+                    _logged_root_quat.append(robot.data.root_quat_w[0].cpu().numpy())
+                    jp = robot.data.joint_pos[0].cpu().numpy()
+                    _logged_joint_pos.append(jp[G1_ISAACLAB_TO_MUJOCO_DOF])  # noqa: F841
 
                 if eval_step_callbacks:
                     all_want_exit = all(
@@ -661,6 +675,17 @@ def main(override_config: omegaconf.OmegaConf):
 
                 for obs_key in obs_dict.keys():  # noqa: SIM118
                     obs_dict[obs_key] = obs_dict[obs_key].to(device)
+
+    if log_robot_states_path and _logged_joint_pos:
+        import numpy as _np
+        _np.savez(
+            log_robot_states_path,
+            root_pos=_np.array(_logged_root_pos),
+            root_quat_wxyz=_np.array(_logged_root_quat),
+            joint_pos_mjcf=_np.array(_logged_joint_pos),
+            fps=50.0,
+        )
+        logger.info(f"[log_robot_states] Saved {len(_logged_joint_pos)} frames -> {log_robot_states_path}")
 
     if simulator_type == "IsaacSim":
         os._exit(0)
