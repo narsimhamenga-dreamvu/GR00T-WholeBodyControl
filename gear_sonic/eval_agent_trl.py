@@ -238,6 +238,9 @@ def main(override_config: omegaconf.OmegaConf):
         )
         if args_cli.headless:
             args_cli.kit_args = base_kit_args + " --no-window"
+        elif getattr(args_cli, "livestream", 0) > 0:
+            # Livestream on a headless server: render but no physical window
+            args_cli.kit_args = base_kit_args + f" --no-window --/renderer/activeGpu={render_gpu_idx}"
         else:
             args_cli.kit_args = base_kit_args + f" --/renderer/activeGpu={render_gpu_idx}"
 
