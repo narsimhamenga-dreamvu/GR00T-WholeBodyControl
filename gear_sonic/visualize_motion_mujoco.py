@@ -99,10 +99,9 @@ def main():
     model = mujoco.MjModel.from_xml_path(MJCF_PATH)
     frames = render_frames(root_pos, root_quat, dof, model, args.width, args.height)
 
-    os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
-    with imageio.get_writer(args.output, fps=fps, codec="libx264",
-                            quality=8, pixelformat="yuv420p") as writer:
-        for f in frames:
-            writer.append_data(f)
-
-    print(f"Saved {len(frames)} frames -> {args.output}")
+    out_path = os.path.abspath(args.output)
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    print(f"Rendering {len(frames)} frames -> {out_path}")
+    imageio.mimwrite(out_path, frames, fps=int(fps), quality=8)
+    size_mb = os.path.getsize(out_path) / 1e6
+    print(f"Done. File size: {size_mb:.1f} MB")
