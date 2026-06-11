@@ -614,6 +614,7 @@ def main(override_config: omegaconf.OmegaConf):
 
         # Optional: log robot states for MuJoCo replay
         log_robot_states_path = config.get("log_robot_states", None)
+        max_log_episodes = config.get("max_log_episodes", 0)  # 0 = unlimited
         _logged_root_pos, _logged_root_quat, _logged_joint_pos = [], [], []
         _log_episode_idx = 0
         if log_robot_states_path:
@@ -681,6 +682,11 @@ def main(override_config: omegaconf.OmegaConf):
                             logger.error(f"[log_robot_states] FAILED to save {_ep_path}: {_e}")
                         _logged_root_pos, _logged_root_quat, _logged_joint_pos = [], [], []
                         _log_episode_idx += 1
+                        if max_log_episodes > 0 and _log_episode_idx >= max_log_episodes:
+                            logger.info(f"[log_robot_states] Reached max_log_episodes={max_log_episodes}. Exiting.")
+                            if hasattr(env, "end_render_results"):
+                                env.end_render_results()
+                            break
 
                 if eval_step_callbacks:
                     all_want_exit = all(
