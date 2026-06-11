@@ -612,17 +612,20 @@ def main(override_config: omegaconf.OmegaConf):
         run_once = config.get("run_once", False)
         envs_completed = torch.zeros(config.num_envs, dtype=torch.bool, device=device)
 
-        # Optional: log robot states for MuJoCo replay
+        # Optional: log robot states for MuJoCo replay (one NPZ per env)
         log_robot_states_path = config.get("log_robot_states", None)
-        max_log_episodes = config.get("max_log_episodes", 0)  # 0 = unlimited
-        _logged_root_pos, _logged_root_quat, _logged_joint_pos = [], [], []
-        _log_episode_idx = 0
+        _num_log_envs = config.num_envs
+        _log_bufs = None  # list of per-env (root_pos, root_quat, joint_pos) lists
+        _log_saved = None  # whether each env has already been saved
         if log_robot_states_path:
+            import numpy as _np
             from gear_sonic.envs.manager_env.robots.g1 import G1_ISAACLAB_TO_MUJOCO_DOF
             _log_base, _log_ext = os.path.splitext(os.path.abspath(log_robot_states_path))
             if not _log_ext:
                 _log_ext = ".npz"
-            logger.info(f"[log_robot_states] Logging env-0 robot state -> {_log_base}{_log_ext}")
+            _log_bufs = [([], [], []) for _ in range(_num_log_envs)]
+            _log_saved = [False] * _num_log_envs
+            logger.info(f"[log_robot_states] Logging {_num_log_envs} envs -> {_log_base}_env###.npz")
 
         with torch.no_grad():
             while True:
@@ -652,41 +655,30 @@ def main(override_config: omegaconf.OmegaConf):
                 )
 
                 if log_robot_states_path:
-                    import numpy as _np
                     robot = env.env.scene["robot"]
-                    _logged_root_pos.append(robot.data.root_pos_w[0].cpu().numpy())
-                    _logged_root_quat.append(robot.data.root_quat_w[0].cpu().numpy())
-                    jp = robot.data.joint_pos[0].cpu().numpy()
-                    _logged_joint_pos.append(jp[G1_ISAACLAB_TO_MUJOCO_DOF])
-
-                    # Save and reset on episode boundary for env-0
-                    env0_done = bool(
-                        dones[0].item() if dones.dim() == 1 else dones[0, 0].item()
-                    )
-                    if env0_done and _logged_joint_pos:
-                        if _log_episode_idx == 0:
-                            _ep_path = f"{_log_base}{_log_ext}"
-                        else:
-                            _ep_path = f"{_log_base}_ep{_log_episode_idx:03d}{_log_ext}"
-                        try:
-                            os.makedirs(os.path.dirname(_ep_path), exist_ok=True)
-                            _np.savez(
-                                _ep_path,
-                                root_pos=_np.array(_logged_root_pos),
-                                root_quat_wxyz=_np.array(_logged_root_quat),
-                                joint_pos_mjcf=_np.array(_logged_joint_pos),
-                                fps=50.0,
-                            )
-                            logger.info(f"[log_robot_states] ep{_log_episode_idx} saved {len(_logged_joint_pos)} frames -> {_ep_path}")
-                        except Exception as _e:
-                            logger.error(f"[log_robot_states] FAILED to save {_ep_path}: {_e}")
-                        _logged_root_pos, _logged_root_quat, _logged_joint_pos = [], [], []
-                        _log_episode_idx += 1
-                        if max_log_episodes > 0 and _log_episode_idx >= max_log_episodes:
-                            logger.info(f"[log_robot_states] Reached max_log_episodes={max_log_episodes}. Exiting.")
-                            if hasattr(env, "end_render_results"):
-                                env.end_render_results()
-                            break
+                    _dones_flat = dones.squeeze(-1) if dones.dim() > 1 else dones
+                    for _ei in range(_num_log_envs):
+                        if _log_saved[_ei]:
+                            continue
+                        _log_bufs[_ei][0].append(robot.data.root_pos_w[_ei].cpu().numpy())
+                        _log_bufs[_ei][1].append(robot.data.root_quat_w[_ei].cpu().numpy())
+                        _jp = robot.data.joint_pos[_ei].cpu().numpy()
+                        _log_bufs[_ei][2].append(_jp[G1_ISAACLAB_TO_MUJOCO_DOF])
+                        if bool(_dones_flat[_ei].item()):
+                            _ep_path = f"{_log_base}_env{_ei:03d}{_log_ext}"
+                            try:
+                                os.makedirs(os.path.dirname(_ep_path), exist_ok=True)
+                                _np.savez(
+                                    _ep_path,
+                                    root_pos=_np.array(_log_bufs[_ei][0]),
+                                    root_quat_wxyz=_np.array(_log_bufs[_ei][1]),
+                                    joint_pos_mjcf=_np.array(_log_bufs[_ei][2]),
+                                    fps=50.0,
+                                )
+                                logger.info(f"[log_robot_states] env{_ei} saved {len(_log_bufs[_ei][0])} frames -> {_ep_path}")
+                            except Exception as _e:
+                                logger.error(f"[log_robot_states] FAILED to save {_ep_path}: {_e}")
+                            _log_saved[_ei] = True
 
                 if eval_step_callbacks:
                     all_want_exit = all(
@@ -711,25 +703,24 @@ def main(override_config: omegaconf.OmegaConf):
                 for obs_key in obs_dict.keys():  # noqa: SIM118
                     obs_dict[obs_key] = obs_dict[obs_key].to(device)
 
-    # Flush any remaining frames from a partial final episode
-    if log_robot_states_path and _logged_joint_pos:
-        import numpy as _np
-        if _log_episode_idx == 0:
-            _ep_path = f"{_log_base}{_log_ext}"
-        else:
-            _ep_path = f"{_log_base}_ep{_log_episode_idx:03d}{_log_ext}"
-        try:
-            os.makedirs(os.path.dirname(_ep_path), exist_ok=True)
-            _np.savez(
-                _ep_path,
-                root_pos=_np.array(_logged_root_pos),
-                root_quat_wxyz=_np.array(_logged_root_quat),
-                joint_pos_mjcf=_np.array(_logged_joint_pos),
-                fps=50.0,
-            )
-            logger.info(f"[log_robot_states] ep{_log_episode_idx} saved {len(_logged_joint_pos)} frames -> {_ep_path}")
-        except Exception as _e:
-            logger.error(f"[log_robot_states] FAILED to save {_ep_path}: {_e}")
+    # Flush partial episodes for any envs that didn't reach done before exit
+    if log_robot_states_path and _log_bufs is not None:
+        for _ei in range(_num_log_envs):
+            if _log_saved[_ei] or not _log_bufs[_ei][2]:
+                continue
+            _ep_path = f"{_log_base}_env{_ei:03d}{_log_ext}"
+            try:
+                os.makedirs(os.path.dirname(_ep_path), exist_ok=True)
+                _np.savez(
+                    _ep_path,
+                    root_pos=_np.array(_log_bufs[_ei][0]),
+                    root_quat_wxyz=_np.array(_log_bufs[_ei][1]),
+                    joint_pos_mjcf=_np.array(_log_bufs[_ei][2]),
+                    fps=50.0,
+                )
+                logger.info(f"[log_robot_states] env{_ei} (partial) saved {len(_log_bufs[_ei][0])} frames -> {_ep_path}")
+            except Exception as _e:
+                logger.error(f"[log_robot_states] FAILED to save {_ep_path}: {_e}")
 
     if simulator_type == "IsaacSim":
         os._exit(0)
