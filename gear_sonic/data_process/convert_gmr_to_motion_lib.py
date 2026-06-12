@@ -24,6 +24,12 @@ NUM_BODIES = 30  # pelvis + 29 joints
 JUMP_THRESHOLD_M = 1.0   # metres per frame at 25 fps
 MIN_STABLE_FRAMES = 30   # clips shorter than this after trimming are dropped
 
+# GMR also produces bad root orientation (large tilt) in the first few frames
+# while the IK solver converges.  We skip ahead until the robot is roughly
+# upright and stays that way for a short settling window.
+MAX_TILT_DEG = 20.0      # max acceptable tilt from vertical (degrees)
+TILT_SETTLE_FRAMES = 10  # consecutive frames that must be below threshold
+
 # Joint limits from the G1 URDF, in DOF order (lower, upper) in radians.
 G1_JOINT_LIMITS = np.array([
     [-2.5307,  2.8798], [-0.5236,  2.9671], [-2.7576,  2.7576],  # left hip pitch/roll/yaw
@@ -55,9 +61,46 @@ def find_stable_start(root_pos: np.ndarray, threshold: float = JUMP_THRESHOLD_M)
     return int(bad[-1]) + 1 if len(bad) > 0 else 0
 
 
-def convert_gmr_to_sonic(motion: dict) -> dict | None:
+def find_tilt_start(
+    root_quat_xyzw: np.ndarray,
+    max_tilt_deg: float = MAX_TILT_DEG,
+    settle_frames: int = TILT_SETTLE_FRAMES,
+) -> int:
+    """Return first frame where tilt from vertical stays below max_tilt_deg
+    for settle_frames consecutive frames.  Returns -1 if it never converges."""
+    R = Rotation.from_quat(root_quat_xyzw)
+    # Robot Z-axis in world frame; tilt = angle between it and world Z [0,0,1]
+    robot_z = R.apply(np.array([0.0, 0.0, 1.0]))
+    tilt_deg = np.degrees(np.arccos(np.clip(robot_z[:, 2], -1.0, 1.0)))
+    below = tilt_deg < max_tilt_deg
+    for i in range(len(below) - settle_frames + 1):
+        if below[i : i + settle_frames].all():
+            return i
+    return -1  # tilt never converges
+
+
+def compute_start(motion: dict) -> tuple[int, int, int]:
+    """Return (start, jump_start, tilt_start).
+
+    start        = frame index to use after all filtering
+    jump_start   = frame chosen by the position-jump detector
+    tilt_start   = frame chosen by the tilt-convergence detector (-1 = never)
+    """
     raw_pos = motion["root_pos"].astype(np.float32)
-    start = find_stable_start(raw_pos)
+    raw_quat = motion["root_rot"].astype(np.float32)
+    jump_start = find_stable_start(raw_pos)
+    tilt_start = find_tilt_start(raw_quat)
+    if tilt_start == -1:
+        return -1, jump_start, tilt_start  # clip never reaches good orientation
+    start = max(jump_start, tilt_start)
+    return start, jump_start, tilt_start
+
+
+def convert_gmr_to_sonic(motion: dict) -> dict | None:
+    start, _, _ = compute_start(motion)
+    if start == -1:
+        return None
+    raw_pos = motion["root_pos"].astype(np.float32)
     stable_frames = len(raw_pos) - start
     if stable_frames < MIN_STABLE_FRAMES:
         return None
@@ -99,13 +142,21 @@ def main():
         with open(pkl_path, "rb") as f:
             motion = pickle.load(f)
 
+        start, jump_start, tilt_start = compute_start(motion)
         raw_pos = motion["root_pos"].astype(np.float32)
-        start = find_stable_start(raw_pos)
-        stable_frames = len(raw_pos) - start
+        total_frames = len(raw_pos)
+
+        if start == -1:
+            print(f"  SKIP    {pkl_path.name}  (tilt never converges below {MAX_TILT_DEG}°)")
+            continue
+
+        stable_frames = total_frames - start
+        if stable_frames < MIN_STABLE_FRAMES:
+            print(f"  SKIP    {pkl_path.name}  (only {stable_frames} stable frames after trimming {start})")
+            continue
 
         converted = convert_gmr_to_sonic(motion)
         if converted is None:
-            print(f"  SKIP    {pkl_path.name}  (only {stable_frames} stable frames after trimming {start})")
             continue
 
         raw_dof = motion["dof_pos"].astype(np.float32)[start:]
@@ -116,9 +167,14 @@ def main():
             ).sum()
         )
         clip_note = f"  [{n_clipped}/{converted['dof'].shape[0]} frames clipped]" if n_clipped else ""
-        trim_note = f"  [trimmed {start} frames]" if start > 0 else ""
+        trim_parts = []
+        if jump_start > 0:
+            trim_parts.append(f"jump={jump_start}f")
+        if tilt_start > 0:
+            trim_parts.append(f"tilt={tilt_start}f")
+        trim_note = f"  [trimmed {start}f: {', '.join(trim_parts)}]" if start > 0 else ""
         all_motions[pkl_path.stem] = converted
-        print(f"  Converted {pkl_path.name}  T={converted['dof'].shape[0]}  fps={converted['fps']}{trim_note}{clip_note}")
+        print(f"  OK  {pkl_path.name}  T={converted['dof'].shape[0]}  fps={converted['fps']}{trim_note}{clip_note}")
 
     if not all_motions:
         raise RuntimeError("No motions survived filtering — check JUMP_THRESHOLD_M / MIN_STABLE_FRAMES")
