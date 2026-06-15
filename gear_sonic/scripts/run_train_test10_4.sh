@@ -1,6 +1,14 @@
 #!/bin/bash
+# Bypass NVIDIA MPS so IsaacSim's CUDA init can enumerate GPUs directly.
+# MPS is active on this machine but its server is not ready (Error 807),
+# which blocks carb.cudainterop from calling cudaGetDeviceCount().
+# Pointing CUDA_MPS_PIPE_DIRECTORY to a missing path forces CUDA to skip MPS.
+export CUDA_MPS_PIPE_DIRECTORY=/tmp/no_mps_$$
+# Vulkan ICD path — required for IsaacSim GPU device creation on headless servers
+export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/nvidia_icd.json
+
 accelerate launch \
-  --num_processes=1 \
+  --num_processes=8 \
   --mixed_precision=no \
   --num_machines=1 \
   --dynamo_backend=no \
