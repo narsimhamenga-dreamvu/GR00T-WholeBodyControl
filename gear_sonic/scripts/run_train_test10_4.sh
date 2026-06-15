@@ -1,14 +1,16 @@
 #!/bin/bash
-# Bypass NVIDIA MPS so IsaacSim's CUDA init can enumerate GPUs directly.
-# MPS is active on this machine but its server is not ready (Error 807),
-# which blocks carb.cudainterop from calling cudaGetDeviceCount().
-# Pointing CUDA_MPS_PIPE_DIRECTORY to a missing path forces CUDA to skip MPS.
-export CUDA_MPS_PIPE_DIRECTORY=/tmp/no_mps_$$
-# Vulkan ICD path — required for IsaacSim GPU device creation on headless servers
+# GPUs are in Exclusive_Process compute mode with MPS server (PID 3853) holding
+# the exclusive CUDA context on all 8 GPUs.  Do NOT bypass MPS — each accelerate
+# rank connects through MPS which multiplexes them onto their assigned GPU.
+# (Bypassing MPS causes "busy or unavailable" because MPS owns the exclusive slot.)
+#
+# VK_ICD_FILENAMES — required for IsaacSim Vulkan device creation on headless servers.
 export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/nvidia_icd.json
 
+NUM_GPUS=${1:-8}
+
 accelerate launch \
-  --num_processes=8 \
+  --num_processes=${NUM_GPUS} \
   --mixed_precision=no \
   --num_machines=1 \
   --dynamo_backend=no \
@@ -17,6 +19,7 @@ accelerate launch \
   +checkpoint=sonic_release/last.pt \
   num_envs=4096 \
   headless=True \
+  save_interval=100 \
   "++algo.trl.bf16=false" \
   "++manager_env.commands.motion.motion_lib_cfg.motion_file=gear_sonic/data/gmr_test10_4_motion_lib.pkl" \
   "++manager_env.commands.motion.motion_lib_cfg.smpl_motion_file=dummy" \
