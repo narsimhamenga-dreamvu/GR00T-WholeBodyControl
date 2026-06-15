@@ -19,7 +19,7 @@ accelerate launch \
   +checkpoint=sonic_release/last.pt \
   num_envs=4096 \
   headless=True \
-  save_interval=100 \
+  "++algo.trl.save_interval=100" \
   "++algo.trl.bf16=false" \
   "++manager_env.commands.motion.motion_lib_cfg.motion_file=gear_sonic/data/gmr_test10_4_motion_lib.pkl" \
   "++manager_env.commands.motion.motion_lib_cfg.smpl_motion_file=dummy" \
