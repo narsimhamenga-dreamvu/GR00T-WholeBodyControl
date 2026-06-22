@@ -1,5 +1,4 @@
 #!/bin/bash
-# 1184 motions need many file descriptors for multiprocessing motion loading.
 ulimit -n 65536
 
 python gear_sonic/eval_agent_trl.py \
@@ -7,11 +6,11 @@ python gear_sonic/eval_agent_trl.py \
   +headless=True \
   ++run_eval_loop=True \
   ++run_once=True \
-  ++num_envs=1184 \
-  ++log_robot_states=/data/fast/workspaces/user3/sonic_inference_out/viz_all_dates/robot_states.npz \
+  ++num_envs=1272 \
+  ++log_robot_states=/data/fast/workspaces/user3/sonic_inference_out/viz_hq/robot_states.npz \
   "+manager_env/terminations=tracking/eval" \
   "++manager_env.commands.motion.encoder_sample_probs.g1=1.0" \
   "++manager_env.commands.motion.encoder_sample_probs.teleop=0.0" \
   "++manager_env.commands.motion.encoder_sample_probs.smpl=0.0" \
-  "++manager_env.commands.motion.motion_lib_cfg.motion_file=gear_sonic/data/gmr_viz_all_dates_motion_lib.pkl" \
+  "++manager_env.commands.motion.motion_lib_cfg.motion_file=gear_sonic/data/gmr_viz_hq_motion_lib.pkl" \
   "++manager_env.commands.motion.motion_lib_cfg.smpl_motion_file=dummy"

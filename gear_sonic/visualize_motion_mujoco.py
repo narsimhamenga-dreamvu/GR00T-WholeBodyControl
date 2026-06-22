@@ -20,7 +20,7 @@ import numpy as np
 
 MJCF_PATH = "gear_sonic/data/assets/robot_description/mjcf/g1_29dof_rev_1_0.xml"
 # Camera parameters from GMR (unitree_g1 values)
-CAM_DISTANCE = 2.5
+CAM_DISTANCE = 4.0
 CAM_ELEVATION = -15   # degrees; negative = slightly looking down
 CAM_AZIMUTH = 90      # degrees; 90 = side view of robot
 
