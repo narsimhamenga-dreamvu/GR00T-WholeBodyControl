@@ -63,6 +63,8 @@ def compute_start(motion: dict) -> int:
 def convert_gmr_to_sonic(motion: dict) -> dict | None:
     start = compute_start(motion)
     raw_pos = motion["root_pos"].astype(np.float32)
+    if len(raw_pos) - start < 2:
+        return None
 
     root_trans_offset = raw_pos[start:].copy()
     root_trans_offset[:, :2] -= root_trans_offset[0, :2]  # re-centre XY to origin
@@ -102,6 +104,10 @@ def main():
             motion = pickle.load(f)
 
         start = compute_start(motion)
+        raw_pos = motion["root_pos"].astype(np.float32)
+        if len(raw_pos) - start < 2:
+            print(f"  SKIP    {pkl_path.name}  (only {len(raw_pos) - start} frame(s) after jump trim)")
+            continue
         converted = convert_gmr_to_sonic(motion)
         if converted is None:
             continue

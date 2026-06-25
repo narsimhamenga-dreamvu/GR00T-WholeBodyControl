@@ -6,7 +6,7 @@ python gear_sonic/eval_agent_trl.py \
   +headless=True \
   ++run_eval_loop=True \
   ++run_once=True \
-  ++num_envs=1338 \
+  ++num_envs=1331 \
   ++log_robot_states=/hdd/gmr_sonic_out/yaw_postik_eval/robot_states.npz \
   "+manager_env/terminations=tracking/eval" \
   "++manager_env.commands.motion.encoder_sample_probs.g1=1.0" \
