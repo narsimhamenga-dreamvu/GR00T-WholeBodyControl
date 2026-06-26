@@ -2177,8 +2177,10 @@ class TRLPPOTrainer(PPOTrainer):  # noqa: F405
             The loaded checkpoint dict.
         """
         print(f"Loading checkpoint from {checkpoint_path}")  # noqa: T201
+        # Load to CPU first to avoid 8-rank simultaneous CUDA I/O contention,
+        # then let load_state_dict move tensors to device.
         checkpoint = torch.load(
-            checkpoint_path, map_location=self.accelerator.device, weights_only=False
+            checkpoint_path, map_location="cpu", weights_only=False
         )
 
         # Load model state
@@ -2230,6 +2232,9 @@ class TRLPPOTrainer(PPOTrainer):  # noqa: F405
                         setattr(self.state, key, value)
 
         print(f"Loaded checkpoint from step {checkpoint['state'].global_step}")  # noqa: T201
+        # Ensure all ranks finish loading before any rank enters the training loop
+        # and triggers the DDP parameter broadcast (avoids GIL-induced NCCL timeout).
+        self.accelerator.wait_for_everyone()
         return checkpoint
 
     def eval(self):
