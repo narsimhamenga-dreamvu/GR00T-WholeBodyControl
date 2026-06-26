@@ -2,7 +2,7 @@
 ulimit -n 65536
 export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/nvidia_icd.json
 
-NUM_GPUS=${1:-8}
+NUM_GPUS=${1:-1}
 
 accelerate launch \
   --num_processes=${NUM_GPUS} \
