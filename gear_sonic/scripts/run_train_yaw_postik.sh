@@ -12,11 +12,10 @@ accelerate launch \
   gear_sonic/train_agent_trl.py \
   +exp=manager/universal_token/all_modes/sonic_release \
   +checkpoint=sonic_release/last.pt \
-  num_envs=4096 \
+  num_envs=512 \
   headless=True \
   "++algo.config.save_interval=100" \
   "++algo.trl.bf16=false" \
-  "++experiment_dir=/data/fast/workspaces/user3/sonic_checkpoints/yaw_postik" \
   "++manager_env.commands.motion.motion_lib_cfg.motion_file=gear_sonic/data/gmr_yaw_postik_motion_lib.pkl" \
   "++manager_env.commands.motion.motion_lib_cfg.smpl_motion_file=dummy" \
   "++manager_env.commands.motion.encoder_sample_probs.g1=1.0" \
